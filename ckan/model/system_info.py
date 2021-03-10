@@ -40,17 +40,35 @@ class SystemInfo(core.StatefulObjectMixin,
 meta.mapper(SystemInfo, system_info_table)
 
 
-def get_system_info(key, default=None):
+def get_system_info_wrapped(key, default=None):
     ''' get data from system_info table '''
     from sqlalchemy.exc import ProgrammingError
     try:
         obj = meta.Session.query(SystemInfo).filter_by(key=key).first()
+        meta.Session.commit()
         if obj:
             return obj.value
     except ProgrammingError:
         meta.Session.rollback()
     return default
 
+
+def get_system_info(key, default=None):
+    ''' get data from system_info table '''
+    ''' Tries and fix a sqlalchemy error:
+        sqlalchemy.exc.StatementError: (sqlalchemy.exc.InvalidRequestError)
+        Can't reconnect until invalid transaction is rolled back'''
+    from sqlalchemy.exc import StatementError, InvalidRequestError
+    import logging
+    try:
+        return get_system_info_wrapped(key, default)
+    except StatementError as e:
+        logging.exception('Error retrieving system info')
+        if isinstance(e.orig, InvalidRequestError):
+            meta.Session.rollback()
+            # try it a second time
+            logging.info('Retrying...')
+            return get_system_info_wrapped(key, default)
 
 
 def delete_system_info(key, default=None):
